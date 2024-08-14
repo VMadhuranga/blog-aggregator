@@ -7,7 +7,6 @@ import (
 	"log"
 	"net/http"
 	"os"
-	"strings"
 	"time"
 
 	"github.com/VMadhuranga/blog-aggregator/internal/database"
@@ -15,6 +14,8 @@ import (
 	"github.com/joho/godotenv"
 	_ "github.com/lib/pq"
 )
+
+type ctxKey string
 
 type apiConfig struct {
 	DB *database.Queries
@@ -84,14 +85,8 @@ func main() {
 	})
 
 	// get user by api key handler
-	serveMux.HandleFunc("GET /v1/users", func(w http.ResponseWriter, r *http.Request) {
-		authHeader := r.Header.Get("Authorization")
-		apiKey := strings.Trim(authHeader, "ApiKey ")
-		if !strings.HasPrefix(authHeader, "ApiKey") || len(apiKey) == 0 {
-			log.Println("Error getting api key")
-			respondWithError(w, 403, "Invalid api key")
-			return
-		}
+	serveMux.HandleFunc("GET /v1/users", authenticate(func(w http.ResponseWriter, r *http.Request) {
+		apiKey := r.Context().Value(ctxKey("apiKey")).(string)
 		user, err := cnfg.DB.GetUserByApiKey(ctx, apiKey)
 		if err != nil {
 			log.Printf("Error getting user: %s", err)
@@ -105,7 +100,7 @@ func main() {
 			Name:      user.Name,
 			ApiKey:    user.ApiKey,
 		})
-	})
+	}))
 
 	// test respondWithJson function
 	serveMux.HandleFunc("GET /v1/healthz", func(w http.ResponseWriter, r *http.Request) {
