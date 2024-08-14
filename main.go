@@ -29,6 +29,15 @@ type userResponse struct {
 	ApiKey    string    `json:"api_key,omitempty"`
 }
 
+type feedResponse struct {
+	ID        uuid.UUID `json:"id"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+	Name      string    `json:"name"`
+	Url       string    `json:"url"`
+	UserID    uuid.UUID `json:"user_id"`
+}
+
 func main() {
 	err := godotenv.Load()
 	if err != nil {
@@ -99,6 +108,48 @@ func main() {
 			UpdatedAt: user.UpdatedAt,
 			Name:      user.Name,
 			ApiKey:    user.ApiKey,
+		})
+	}))
+
+	// create feed handler
+	serveMux.HandleFunc("POST /v1/feeds", authenticate(func(w http.ResponseWriter, r *http.Request) {
+		decoder := json.NewDecoder(r.Body)
+		defer r.Body.Close()
+		var payload struct {
+			Name string
+			Url  string
+		}
+		err := decoder.Decode(&payload)
+		if err != nil {
+			log.Printf("Error decoding payload: %s", err)
+			respondWithError(w, 500, "")
+		}
+		apiKey := r.Context().Value(ctxKey("apiKey")).(string)
+		user, err := cnfg.DB.GetUserByApiKey(ctx, apiKey)
+		if err != nil {
+			log.Printf("Error getting user: %s", err)
+			respondWithError(w, 500, "")
+		}
+		feed, err := cnfg.DB.CreateFeed(ctx, database.CreateFeedParams{
+			ID:        uuid.New(),
+			CreatedAt: time.Now(),
+			UpdatedAt: time.Now(),
+			Name:      payload.Name,
+			Url:       payload.Url,
+			UserID:    user.ID,
+		})
+		if err != nil {
+			log.Printf("Error creating feed: %s", err)
+			respondWithError(w, 500, "")
+			return
+		}
+		respondWithJson(w, 201, feedResponse{
+			ID:        feed.ID,
+			CreatedAt: feed.CreatedAt,
+			UpdatedAt: feed.UpdatedAt,
+			Name:      feed.Name,
+			Url:       feed.Url,
+			UserID:    user.ID,
 		})
 	}))
 
