@@ -7,6 +7,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/VMadhuranga/blog-aggregator/internal/database"
@@ -17,6 +18,14 @@ import (
 
 type apiConfig struct {
 	DB *database.Queries
+}
+
+type userResponse struct {
+	ID        uuid.UUID `json:"id"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+	Name      string    `json:"name"`
+	ApiKey    string    `json:"api_key,omitempty"`
 }
 
 func main() {
@@ -66,16 +75,35 @@ func main() {
 			respondWithError(w, 500, "")
 			return
 		}
-		respondWithJson(w, 201, struct {
-			ID        uuid.UUID `json:"id"`
-			CreatedAt time.Time `json:"created_at"`
-			UpdatedAt time.Time `json:"updated_at"`
-			Name      string    `json:"lane"`
-		}{
+		respondWithJson(w, 201, userResponse{
 			ID:        user.ID,
 			CreatedAt: user.CreatedAt,
 			UpdatedAt: user.UpdatedAt,
 			Name:      user.Name,
+		})
+	})
+
+	// get user by api key handler
+	serveMux.HandleFunc("GET /v1/users", func(w http.ResponseWriter, r *http.Request) {
+		authHeader := r.Header.Get("Authorization")
+		apiKey := strings.Trim(authHeader, "ApiKey ")
+		if !strings.HasPrefix(authHeader, "ApiKey") || len(apiKey) == 0 {
+			log.Println("Error getting api key")
+			respondWithError(w, 403, "Invalid api key")
+			return
+		}
+		user, err := cnfg.DB.GetUserByApiKey(ctx, apiKey)
+		if err != nil {
+			log.Printf("Error getting user: %s", err)
+			respondWithError(w, 500, "")
+			return
+		}
+		respondWithJson(w, 200, userResponse{
+			ID:        user.ID,
+			CreatedAt: user.CreatedAt,
+			UpdatedAt: user.UpdatedAt,
+			Name:      user.Name,
+			ApiKey:    user.ApiKey,
 		})
 	})
 
