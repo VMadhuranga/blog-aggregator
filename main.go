@@ -73,6 +73,7 @@ func main() {
 		if err != nil {
 			log.Printf("Error decoding payload: %s", err)
 			respondWithError(w, 500, "")
+			return
 		}
 		user, err := cnfg.DB.CreateUser(ctx, database.CreateUserParams{
 			ID:        uuid.New(),
@@ -123,12 +124,14 @@ func main() {
 		if err != nil {
 			log.Printf("Error decoding payload: %s", err)
 			respondWithError(w, 500, "")
+			return
 		}
 		apiKey := r.Context().Value(ctxKey("apiKey")).(string)
 		user, err := cnfg.DB.GetUserByApiKey(ctx, apiKey)
 		if err != nil {
 			log.Printf("Error getting user: %s", err)
 			respondWithError(w, 500, "")
+			return
 		}
 		feed, err := cnfg.DB.CreateFeed(ctx, database.CreateFeedParams{
 			ID:        uuid.New(),
@@ -152,6 +155,28 @@ func main() {
 			UserID:    user.ID,
 		})
 	}))
+
+	// get all feeds
+	serveMux.HandleFunc("GET /v1/feeds", func(w http.ResponseWriter, r *http.Request) {
+		feeds, err := cnfg.DB.GetAllFeeds(ctx)
+		if err != nil {
+			log.Printf("Error getting all feeds: %s", err)
+			respondWithError(w, 500, "")
+			return
+		}
+		feedsResponse := []feedResponse{}
+		for _, feed := range feeds {
+			feedsResponse = append(feedsResponse, feedResponse{
+				ID:        feed.ID,
+				CreatedAt: feed.CreatedAt,
+				UpdatedAt: feed.UpdatedAt,
+				Name:      feed.Name,
+				Url:       feed.Url,
+				UserID:    feed.UserID,
+			})
+		}
+		respondWithJson(w, 200, feedsResponse)
+	})
 
 	// test respondWithJson function
 	serveMux.HandleFunc("GET /v1/healthz", func(w http.ResponseWriter, r *http.Request) {
