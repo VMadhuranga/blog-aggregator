@@ -239,6 +239,33 @@ func main() {
 		respondWithJson(w, 204, nil)
 	})
 
+	serveMux.HandleFunc("GET /v1/feed_follows", authenticate(func(w http.ResponseWriter, r *http.Request) {
+		apiKey := r.Context().Value(ctxKey("apiKey")).(string)
+		user, err := cnfg.DB.GetUserByApiKey(ctx, apiKey)
+		if err != nil {
+			log.Printf("Error getting user: %s", err)
+			respondWithError(w, 500, "")
+			return
+		}
+		userFeedFollows, err := cnfg.DB.GetUserFeedFollows(ctx, user.ID)
+		if err != nil {
+			log.Printf("Error getting user feed follows: %s", err)
+			respondWithError(w, 500, "")
+			return
+		}
+		feedFollowsResponse := []feedFollowResponse{}
+		for _, feedFollow := range userFeedFollows {
+			feedFollowsResponse = append(feedFollowsResponse, feedFollowResponse{
+				ID:        feedFollow.ID,
+				CreatedAt: feedFollow.CreatedAt,
+				UpdatedAt: feedFollow.UpdatedAt,
+				UserID:    feedFollow.UserID,
+				FeedID:    feedFollow.FeedID,
+			})
+		}
+		respondWithJson(w, 200, feedFollowsResponse)
+	}))
+
 	// test respondWithJson function
 	serveMux.HandleFunc("GET /v1/healthz", func(w http.ResponseWriter, r *http.Request) {
 		respondWithJson(w, 200, map[string]string{"success": "ok"})
