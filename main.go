@@ -227,6 +227,18 @@ func main() {
 		})
 	}))
 
+	// delete feed follow handler
+	serveMux.HandleFunc("DELETE /v1/feed_follows/{feedFollowID}", func(w http.ResponseWriter, r *http.Request) {
+		feedFollowID := r.PathValue("feedFollowID")
+		err := cnfg.DB.DeleteFeedFollow(ctx, uuid.MustParse(feedFollowID))
+		if err != nil {
+			log.Panicf("Error deleting feed flow: %s", err)
+			respondWithError(w, 500, "")
+			return
+		}
+		respondWithJson(w, 204, nil)
+	})
+
 	// test respondWithJson function
 	serveMux.HandleFunc("GET /v1/healthz", func(w http.ResponseWriter, r *http.Request) {
 		respondWithJson(w, 200, map[string]string{"success": "ok"})
