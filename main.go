@@ -38,6 +38,14 @@ type feedResponse struct {
 	UserID    uuid.UUID `json:"user_id"`
 }
 
+type feedFollowResponse struct {
+	ID        uuid.UUID `json:"id"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+	UserID    uuid.UUID `json:"user_id"`
+	FeedID    uuid.UUID `json:"feed_id"`
+}
+
 func main() {
 	err := godotenv.Load()
 	if err != nil {
@@ -156,7 +164,7 @@ func main() {
 		})
 	}))
 
-	// get all feeds
+	// get all feeds handler
 	serveMux.HandleFunc("GET /v1/feeds", func(w http.ResponseWriter, r *http.Request) {
 		feeds, err := cnfg.DB.GetAllFeeds(ctx)
 		if err != nil {
@@ -177,6 +185,47 @@ func main() {
 		}
 		respondWithJson(w, 200, feedsResponse)
 	})
+
+	// create feed follow handler
+	serveMux.HandleFunc("POST /v1/feed_follows", authenticate(func(w http.ResponseWriter, r *http.Request) {
+		decoder := json.NewDecoder(r.Body)
+		defer r.Body.Close()
+		var payload struct {
+			FeedID string `json:"feed_id"`
+		}
+		err := decoder.Decode(&payload)
+		if err != nil {
+			log.Printf("Error decoding payload: %s", err)
+			respondWithError(w, 500, "")
+			return
+		}
+		apiKey := r.Context().Value(ctxKey("apiKey")).(string)
+		user, err := cnfg.DB.GetUserByApiKey(ctx, apiKey)
+		if err != nil {
+			log.Printf("Error getting user: %s", err)
+			respondWithError(w, 500, "")
+			return
+		}
+		feedFollow, err := cnfg.DB.CreateFeedFollow(ctx, database.CreateFeedFollowParams{
+			ID:        uuid.New(),
+			CreatedAt: time.Now(),
+			UpdatedAt: time.Now(),
+			UserID:    user.ID,
+			FeedID:    uuid.MustParse(payload.FeedID),
+		})
+		if err != nil {
+			log.Printf("Error creating feed follow: %s", err)
+			respondWithError(w, 500, "")
+			return
+		}
+		respondWithJson(w, 201, feedFollowResponse{
+			ID:        feedFollow.ID,
+			CreatedAt: feedFollow.CreatedAt,
+			UpdatedAt: feedFollow.UpdatedAt,
+			UserID:    feedFollow.UserID,
+			FeedID:    feedFollow.FeedID,
+		})
+	}))
 
 	// test respondWithJson function
 	serveMux.HandleFunc("GET /v1/healthz", func(w http.ResponseWriter, r *http.Request) {
