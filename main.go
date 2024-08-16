@@ -154,13 +154,37 @@ func main() {
 			respondWithError(w, 500, "")
 			return
 		}
-		respondWithJson(w, 201, feedResponse{
-			ID:        feed.ID,
-			CreatedAt: feed.CreatedAt,
-			UpdatedAt: feed.UpdatedAt,
-			Name:      feed.Name,
-			Url:       feed.Url,
+		feedFollow, err := cnfg.DB.CreateFeedFollow(ctx, database.CreateFeedFollowParams{
+			ID:        uuid.New(),
+			CreatedAt: time.Now(),
+			UpdatedAt: time.Now(),
 			UserID:    user.ID,
+			FeedID:    feed.ID,
+		})
+		if err != nil {
+			log.Printf("Error creating feed follow: %s", err)
+			respondWithError(w, 500, "")
+			return
+		}
+		respondWithJson(w, 201, struct {
+			Feed       feedResponse       `json:"feed"`
+			FeedFollow feedFollowResponse `json:"feed_follow"`
+		}{
+			Feed: feedResponse{
+				ID:        feed.ID,
+				CreatedAt: feed.CreatedAt,
+				UpdatedAt: feed.UpdatedAt,
+				Name:      feed.Name,
+				Url:       feed.Url,
+				UserID:    user.ID,
+			},
+			FeedFollow: feedFollowResponse{
+				ID:        feedFollow.ID,
+				CreatedAt: feedFollow.CreatedAt,
+				UpdatedAt: feedFollow.UpdatedAt,
+				UserID:    feedFollow.UserID,
+				FeedID:    feedFollow.FeedID,
+			},
 		})
 	}))
 
