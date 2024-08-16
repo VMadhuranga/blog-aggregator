@@ -6,3 +6,7 @@ sql:
     gen:
       go:
         out: "internal/database"
+        emit_json_tags: true
+        overrides:
+          - column: users.api_key
+            go_struct_tag: json:"api_key,omitempty"
