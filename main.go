@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"log"
 	"net/http"
 	"os"
@@ -16,34 +15,8 @@ import (
 )
 
 type ctxKey string
-
 type apiConfig struct {
 	DB *database.Queries
-}
-
-type userResponse struct {
-	ID        uuid.UUID `json:"id"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
-	Name      string    `json:"name"`
-	ApiKey    string    `json:"api_key,omitempty"`
-}
-
-type feedResponse struct {
-	ID        uuid.UUID `json:"id"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
-	Name      string    `json:"name"`
-	Url       string    `json:"url"`
-	UserID    uuid.UUID `json:"user_id"`
-}
-
-type feedFollowResponse struct {
-	ID        uuid.UUID `json:"id"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
-	UserID    uuid.UUID `json:"user_id"`
-	FeedID    uuid.UUID `json:"feed_id"`
 }
 
 func main() {
@@ -72,12 +45,9 @@ func main() {
 
 	// create user handler
 	serveMux.HandleFunc("POST /v1/users", func(w http.ResponseWriter, r *http.Request) {
-		decoder := json.NewDecoder(r.Body)
-		defer r.Body.Close()
-		var payload struct {
+		payload, err := decodePayload(r, struct {
 			Name string
-		}
-		err := decoder.Decode(&payload)
+		}{})
 		if err != nil {
 			log.Printf("Error decoding payload: %s", err)
 			respondWithError(w, 500, "")
@@ -94,12 +64,8 @@ func main() {
 			respondWithError(w, 500, "")
 			return
 		}
-		respondWithJson(w, 201, userResponse{
-			ID:        user.ID,
-			CreatedAt: user.CreatedAt,
-			UpdatedAt: user.UpdatedAt,
-			Name:      user.Name,
-		})
+		user.ApiKey = "" // omit api key from response
+		respondWithJson(w, 201, user)
 	})
 
 	// get user by api key handler
@@ -111,24 +77,15 @@ func main() {
 			respondWithError(w, 500, "")
 			return
 		}
-		respondWithJson(w, 200, userResponse{
-			ID:        user.ID,
-			CreatedAt: user.CreatedAt,
-			UpdatedAt: user.UpdatedAt,
-			Name:      user.Name,
-			ApiKey:    user.ApiKey,
-		})
+		respondWithJson(w, 200, user)
 	}))
 
 	// create feed handler
 	serveMux.HandleFunc("POST /v1/feeds", authenticate(func(w http.ResponseWriter, r *http.Request) {
-		decoder := json.NewDecoder(r.Body)
-		defer r.Body.Close()
-		var payload struct {
+		payload, err := decodePayload(r, struct {
 			Name string
 			Url  string
-		}
-		err := decoder.Decode(&payload)
+		}{})
 		if err != nil {
 			log.Printf("Error decoding payload: %s", err)
 			respondWithError(w, 500, "")
@@ -167,10 +124,10 @@ func main() {
 			return
 		}
 		respondWithJson(w, 201, struct {
-			Feed       feedResponse       `json:"feed"`
-			FeedFollow feedFollowResponse `json:"feed_follow"`
+			Feed       database.Feed       `json:"feed"`
+			FeedFollow database.FeedFollow `json:"feed_follow"`
 		}{
-			Feed: feedResponse{
+			Feed: database.Feed{
 				ID:        feed.ID,
 				CreatedAt: feed.CreatedAt,
 				UpdatedAt: feed.UpdatedAt,
@@ -178,7 +135,7 @@ func main() {
 				Url:       feed.Url,
 				UserID:    user.ID,
 			},
-			FeedFollow: feedFollowResponse{
+			FeedFollow: database.FeedFollow{
 				ID:        feedFollow.ID,
 				CreatedAt: feedFollow.CreatedAt,
 				UpdatedAt: feedFollow.UpdatedAt,
@@ -196,28 +153,14 @@ func main() {
 			respondWithError(w, 500, "")
 			return
 		}
-		feedsResponse := []feedResponse{}
-		for _, feed := range feeds {
-			feedsResponse = append(feedsResponse, feedResponse{
-				ID:        feed.ID,
-				CreatedAt: feed.CreatedAt,
-				UpdatedAt: feed.UpdatedAt,
-				Name:      feed.Name,
-				Url:       feed.Url,
-				UserID:    feed.UserID,
-			})
-		}
-		respondWithJson(w, 200, feedsResponse)
+		respondWithJson(w, 200, feeds)
 	})
 
 	// create feed follow handler
 	serveMux.HandleFunc("POST /v1/feed_follows", authenticate(func(w http.ResponseWriter, r *http.Request) {
-		decoder := json.NewDecoder(r.Body)
-		defer r.Body.Close()
-		var payload struct {
+		payload, err := decodePayload(r, struct {
 			FeedID string `json:"feed_id"`
-		}
-		err := decoder.Decode(&payload)
+		}{})
 		if err != nil {
 			log.Printf("Error decoding payload: %s", err)
 			respondWithError(w, 500, "")
@@ -242,13 +185,7 @@ func main() {
 			respondWithError(w, 500, "")
 			return
 		}
-		respondWithJson(w, 201, feedFollowResponse{
-			ID:        feedFollow.ID,
-			CreatedAt: feedFollow.CreatedAt,
-			UpdatedAt: feedFollow.UpdatedAt,
-			UserID:    feedFollow.UserID,
-			FeedID:    feedFollow.FeedID,
-		})
+		respondWithJson(w, 201, feedFollow)
 	}))
 
 	// delete feed follow handler
@@ -263,6 +200,7 @@ func main() {
 		respondWithJson(w, 204, nil)
 	})
 
+	// get user feed follows handler
 	serveMux.HandleFunc("GET /v1/feed_follows", authenticate(func(w http.ResponseWriter, r *http.Request) {
 		apiKey := r.Context().Value(ctxKey("apiKey")).(string)
 		user, err := cnfg.DB.GetUserByApiKey(ctx, apiKey)
@@ -277,17 +215,7 @@ func main() {
 			respondWithError(w, 500, "")
 			return
 		}
-		feedFollowsResponse := []feedFollowResponse{}
-		for _, feedFollow := range userFeedFollows {
-			feedFollowsResponse = append(feedFollowsResponse, feedFollowResponse{
-				ID:        feedFollow.ID,
-				CreatedAt: feedFollow.CreatedAt,
-				UpdatedAt: feedFollow.UpdatedAt,
-				UserID:    feedFollow.UserID,
-				FeedID:    feedFollow.FeedID,
-			})
-		}
-		respondWithJson(w, 200, feedFollowsResponse)
+		respondWithJson(w, 200, userFeedFollows)
 	}))
 
 	// test respondWithJson function
