@@ -46,20 +46,25 @@ func (q *Queries) CreateFeedFollow(ctx context.Context, arg CreateFeedFollowPara
 }
 
 const deleteFeedFollow = `-- name: DeleteFeedFollow :exec
-DELETE FROM feed_follows WHERE id = $1
+DELETE FROM feed_follows WHERE id = $1 AND user_id = $2
 `
 
-func (q *Queries) DeleteFeedFollow(ctx context.Context, id uuid.UUID) error {
-	_, err := q.db.ExecContext(ctx, deleteFeedFollow, id)
+type DeleteFeedFollowParams struct {
+	ID     uuid.UUID `json:"id"`
+	UserID uuid.UUID `json:"user_id"`
+}
+
+func (q *Queries) DeleteFeedFollow(ctx context.Context, arg DeleteFeedFollowParams) error {
+	_, err := q.db.ExecContext(ctx, deleteFeedFollow, arg.ID, arg.UserID)
 	return err
 }
 
 const getUserFeedFollows = `-- name: GetUserFeedFollows :many
-SELECT id, created_at, updated_at, user_id, feed_id FROM feed_follows WHERE id = $1
+SELECT id, created_at, updated_at, user_id, feed_id FROM feed_follows WHERE user_id = $1
 `
 
-func (q *Queries) GetUserFeedFollows(ctx context.Context, id uuid.UUID) ([]FeedFollow, error) {
-	rows, err := q.db.QueryContext(ctx, getUserFeedFollows, id)
+func (q *Queries) GetUserFeedFollows(ctx context.Context, userID uuid.UUID) ([]FeedFollow, error) {
+	rows, err := q.db.QueryContext(ctx, getUserFeedFollows, userID)
 	if err != nil {
 		return nil, err
 	}
