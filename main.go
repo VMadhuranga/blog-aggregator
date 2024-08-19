@@ -1,236 +1,85 @@
 package main
 
 import (
-	"context"
 	"database/sql"
 	"log"
 	"net/http"
 	"os"
-	"time"
 
 	"github.com/VMadhuranga/blog-aggregator/internal/database"
-	"github.com/google/uuid"
+	"github.com/go-chi/chi/v5"
+	"github.com/go-chi/cors"
 	"github.com/joho/godotenv"
 	_ "github.com/lib/pq"
 )
 
 type ctxKey string
+
 type apiConfig struct {
 	DB *database.Queries
 }
 
 func main() {
 	err := godotenv.Load()
+
 	if err != nil {
-		log.Printf("Error loading environment file: %s", err)
-		return
+		log.Fatalf("Error loading environment file: %s", err)
 	}
+
 	port := os.Getenv("PORT")
 	dbURL := os.Getenv("CONN")
 	db, err := sql.Open("postgres", dbURL)
+
 	if err != nil {
-		log.Printf("Error opening database: %s", err)
-		return
-	}
-	dbQueries := database.New(db)
-	cnfg := apiConfig{
-		DB: dbQueries,
-	}
-	ctx := context.Background()
-	serveMux := http.NewServeMux()
-	server := http.Server{
-		Addr:    ":" + port,
-		Handler: serveMux,
+		log.Fatalf("Error opening database: %s", err)
 	}
 
-	// create user handler
-	serveMux.HandleFunc("POST /v1/users", func(w http.ResponseWriter, r *http.Request) {
-		payload, err := decodePayload(r, struct {
-			Name string
-		}{})
-		if err != nil {
-			log.Printf("Error decoding payload: %s", err)
-			respondWithError(w, 500, "")
-			return
-		}
-		user, err := cnfg.DB.CreateUser(ctx, database.CreateUserParams{
-			ID:        uuid.New(),
-			CreatedAt: time.Now(),
-			UpdatedAt: time.Now(),
-			Name:      payload.Name,
-		})
-		if err != nil {
-			log.Printf("Error creating user: %s", err)
-			respondWithError(w, 500, "")
-			return
-		}
-		user.ApiKey = "" // omit api key from response
-		respondWithJson(w, 201, user)
-	})
+	apiCfg := apiConfig{
+		DB: database.New(db),
+	}
 
-	// get user by api key handler
-	serveMux.HandleFunc("GET /v1/users", authenticate(func(w http.ResponseWriter, r *http.Request) {
-		apiKey := r.Context().Value(ctxKey("apiKey")).(string)
-		user, err := cnfg.DB.GetUserByApiKey(ctx, apiKey)
-		if err != nil {
-			log.Printf("Error getting user: %s", err)
-			respondWithError(w, 500, "")
-			return
-		}
-		respondWithJson(w, 200, user)
+	router := chi.NewRouter()
+
+	router.Use(cors.Handler(cors.Options{
+		AllowedOrigins:   []string{"https://*", "http://*"},
+		AllowedMethods:   []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
+		AllowedHeaders:   []string{"*"},
+		ExposedHeaders:   []string{"Link"},
+		AllowCredentials: false,
+		MaxAge:           300,
 	}))
 
-	// create feed handler
-	serveMux.HandleFunc("POST /v1/feeds", authenticate(func(w http.ResponseWriter, r *http.Request) {
-		payload, err := decodePayload(r, struct {
-			Name string
-			Url  string
-		}{})
-		if err != nil {
-			log.Printf("Error decoding payload: %s", err)
-			respondWithError(w, 500, "")
-			return
-		}
-		apiKey := r.Context().Value(ctxKey("apiKey")).(string)
-		user, err := cnfg.DB.GetUserByApiKey(ctx, apiKey)
-		if err != nil {
-			log.Printf("Error getting user: %s", err)
-			respondWithError(w, 500, "")
-			return
-		}
-		feed, err := cnfg.DB.CreateFeed(ctx, database.CreateFeedParams{
-			ID:        uuid.New(),
-			CreatedAt: time.Now(),
-			UpdatedAt: time.Now(),
-			Name:      payload.Name,
-			Url:       payload.Url,
-			UserID:    user.ID,
-		})
-		if err != nil {
-			log.Printf("Error creating feed: %s", err)
-			respondWithError(w, 500, "")
-			return
-		}
-		feedFollow, err := cnfg.DB.CreateFeedFollow(ctx, database.CreateFeedFollowParams{
-			ID:        uuid.New(),
-			CreatedAt: time.Now(),
-			UpdatedAt: time.Now(),
-			UserID:    user.ID,
-			FeedID:    feed.ID,
-		})
-		if err != nil {
-			log.Printf("Error creating feed follow: %s", err)
-			respondWithError(w, 500, "")
-			return
-		}
-		respondWithJson(w, 201, struct {
-			Feed       database.Feed       `json:"feed"`
-			FeedFollow database.FeedFollow `json:"feed_follow"`
-		}{
-			Feed: database.Feed{
-				ID:        feed.ID,
-				CreatedAt: feed.CreatedAt,
-				UpdatedAt: feed.UpdatedAt,
-				Name:      feed.Name,
-				Url:       feed.Url,
-				UserID:    user.ID,
-			},
-			FeedFollow: database.FeedFollow{
-				ID:        feedFollow.ID,
-				CreatedAt: feedFollow.CreatedAt,
-				UpdatedAt: feedFollow.UpdatedAt,
-				UserID:    feedFollow.UserID,
-				FeedID:    feedFollow.FeedID,
-			},
-		})
-	}))
+	v1Router := chi.NewRouter()
 
-	// get all feeds handler
-	serveMux.HandleFunc("GET /v1/feeds", func(w http.ResponseWriter, r *http.Request) {
-		feeds, err := cnfg.DB.GetAllFeeds(ctx)
-		if err != nil {
-			log.Printf("Error getting all feeds: %s", err)
-			respondWithError(w, 500, "")
-			return
-		}
-		respondWithJson(w, 200, feeds)
-	})
+	v1Router.Post("/users", apiCfg.handleCreateUser)
+	v1Router.Get("/users", authenticate(apiCfg.handleGetUserByApiKey))
 
-	// create feed follow handler
-	serveMux.HandleFunc("POST /v1/feed_follows", authenticate(func(w http.ResponseWriter, r *http.Request) {
-		payload, err := decodePayload(r, struct {
-			FeedID string `json:"feed_id"`
-		}{})
-		if err != nil {
-			log.Printf("Error decoding payload: %s", err)
-			respondWithError(w, 500, "")
-			return
-		}
-		apiKey := r.Context().Value(ctxKey("apiKey")).(string)
-		user, err := cnfg.DB.GetUserByApiKey(ctx, apiKey)
-		if err != nil {
-			log.Printf("Error getting user: %s", err)
-			respondWithError(w, 500, "")
-			return
-		}
-		feedFollow, err := cnfg.DB.CreateFeedFollow(ctx, database.CreateFeedFollowParams{
-			ID:        uuid.New(),
-			CreatedAt: time.Now(),
-			UpdatedAt: time.Now(),
-			UserID:    user.ID,
-			FeedID:    uuid.MustParse(payload.FeedID),
-		})
-		if err != nil {
-			log.Printf("Error creating feed follow: %s", err)
-			respondWithError(w, 500, "")
-			return
-		}
-		respondWithJson(w, 201, feedFollow)
-	}))
+	v1Router.Post("/feeds", authenticate(apiCfg.handleCreateFeed))
+	v1Router.Get("/feeds", apiCfg.handleGetAllFeeds)
 
-	// delete feed follow handler
-	serveMux.HandleFunc("DELETE /v1/feed_follows/{feedFollowID}", func(w http.ResponseWriter, r *http.Request) {
-		feedFollowID := r.PathValue("feedFollowID")
-		err := cnfg.DB.DeleteFeedFollow(ctx, uuid.MustParse(feedFollowID))
-		if err != nil {
-			log.Panicf("Error deleting feed flow: %s", err)
-			respondWithError(w, 500, "")
-			return
-		}
-		respondWithJson(w, 204, nil)
-	})
+	v1Router.Post("/feed_follows", authenticate(apiCfg.handleCreateFeedFollow))
+	v1Router.Get("/feed_follows", authenticate(apiCfg.handleGetUserFeedFollows))
+	v1Router.Delete("/feed_follows/{feedFollowID}", authenticate(apiCfg.handleDeleteFeedFollow))
 
-	// get user feed follows handler
-	serveMux.HandleFunc("GET /v1/feed_follows", authenticate(func(w http.ResponseWriter, r *http.Request) {
-		apiKey := r.Context().Value(ctxKey("apiKey")).(string)
-		user, err := cnfg.DB.GetUserByApiKey(ctx, apiKey)
-		if err != nil {
-			log.Printf("Error getting user: %s", err)
-			respondWithError(w, 500, "")
-			return
-		}
-		userFeedFollows, err := cnfg.DB.GetUserFeedFollows(ctx, user.ID)
-		if err != nil {
-			log.Printf("Error getting user feed follows: %s", err)
-			respondWithError(w, 500, "")
-			return
-		}
-		respondWithJson(w, 200, userFeedFollows)
-	}))
-
-	// test respondWithJson function
-	serveMux.HandleFunc("GET /v1/healthz", func(w http.ResponseWriter, r *http.Request) {
+	v1Router.Get("/healthz", func(w http.ResponseWriter, r *http.Request) {
 		respondWithJson(w, 200, map[string]string{"success": "ok"})
 	})
 
-	// test respondWithError function
-	serveMux.HandleFunc("GET /v1/error", func(w http.ResponseWriter, r *http.Request) {
+	v1Router.Get("/error", func(w http.ResponseWriter, r *http.Request) {
 		respondWithError(w, 500, "")
 	})
 
+	router.Mount("/v1", v1Router)
+
+	server := http.Server{
+		Addr:    ":" + port,
+		Handler: router,
+	}
+
+	log.Printf("Server running on port: %v", port)
 	err = server.ListenAndServe()
+
 	if err != nil {
-		log.Printf("Error listening on server: %s", err)
-		return
+		log.Fatalf("Error listening on server: %s", err)
 	}
 }
