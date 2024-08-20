@@ -18,7 +18,7 @@ type Feed struct {
 	Name          string       `json:"name"`
 	Url           string       `json:"url"`
 	UserID        uuid.UUID    `json:"user_id"`
-	LastFetchedIn sql.NullTime `json:"last_fetched_in"`
+	LastFetchedAt sql.NullTime `json:"last_fetched_at"`
 }
 
 type FeedFollow struct {
