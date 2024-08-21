@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"database/sql"
 	"log"
 	"sync"
 	"time"
@@ -45,13 +44,6 @@ func startFetchingFeeds(limit int, interval time.Duration, dbq *database.Queries
 				}
 
 				for _, item := range rssFeed.Channel.Item {
-					description := sql.NullString{}
-
-					if item.Description != "" {
-						description.String = item.Description
-						description.Valid = true
-					}
-
 					pubDate, err := time.Parse(time.RFC1123Z, item.PubDate)
 
 					if err != nil {
@@ -64,7 +56,7 @@ func startFetchingFeeds(limit int, interval time.Duration, dbq *database.Queries
 						UpdatedAt:   time.Now(),
 						Title:       item.Title,
 						Url:         item.Link,
-						Description: description,
+						Description: &item.Description,
 						PublishedAt: pubDate,
 						FeedID:      feed.ID,
 					})
