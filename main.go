@@ -40,7 +40,6 @@ func main() {
 	}
 
 	go startFetchingFeeds(10, time.Minute, apiCfg.DB)
-
 	router := chi.NewRouter()
 
 	router.Use(cors.Handler(cors.Options{
@@ -63,6 +62,8 @@ func main() {
 	v1Router.Post("/feed_follows", authenticate(apiCfg.handleCreateFeedFollow))
 	v1Router.Get("/feed_follows", authenticate(apiCfg.handleGetUserFeedFollows))
 	v1Router.Delete("/feed_follows/{feedFollowID}", authenticate(apiCfg.handleDeleteFeedFollow))
+
+	v1Router.Get("/posts", authenticate(apiCfg.handleGetPostsByUser))
 
 	v1Router.Get("/healthz", func(w http.ResponseWriter, r *http.Request) {
 		respondWithJson(w, 200, map[string]string{"success": "ok"})
