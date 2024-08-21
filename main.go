@@ -5,6 +5,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"time"
 
 	"github.com/VMadhuranga/blog-aggregator/internal/database"
 	"github.com/go-chi/chi/v5"
@@ -37,6 +38,8 @@ func main() {
 	apiCfg := apiConfig{
 		DB: database.New(db),
 	}
+
+	go startFetchingFeeds(10, time.Minute, apiCfg.DB)
 
 	router := chi.NewRouter()
 
