@@ -9,6 +9,7 @@ import (
 
 	"github.com/VMadhuranga/blog-aggregator/internal/database"
 	"github.com/go-chi/chi/v5"
+	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/cors"
 	"github.com/joho/godotenv"
 	_ "github.com/lib/pq"
@@ -28,8 +29,8 @@ func main() {
 	}
 
 	port := os.Getenv("PORT")
-	dbURL := os.Getenv("CONN")
-	db, err := sql.Open("postgres", dbURL)
+	dbURI := os.Getenv("POSTGRES_URI")
+	db, err := sql.Open("postgres", dbURI)
 
 	if err != nil {
 		log.Fatalf("Error opening database: %s", err)
@@ -41,6 +42,8 @@ func main() {
 
 	go startFetchingFeeds(10, time.Minute, apiCfg.DB)
 	router := chi.NewRouter()
+
+	router.Use(middleware.Logger)
 
 	router.Use(cors.Handler(cors.Options{
 		AllowedOrigins:   []string{"https://*", "http://*"},
