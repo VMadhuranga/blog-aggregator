@@ -61,7 +61,8 @@ func startFetchingFeeds(limit int, interval time.Duration, dbq *database.Queries
 						FeedID:      feed.ID,
 					})
 
-					if err != nil {
+					// suppressing duplicate key error because it can happen
+					if err != nil && err.Error() != "pq: duplicate key value violates unique constraint \"posts_url_key\"" {
 						log.Printf("Error creating post: %s", err)
 					}
 				}
